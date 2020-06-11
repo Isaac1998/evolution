@@ -109,7 +109,7 @@ class Domain:
                  tritics=10):
         self.xs = x_size
         self.ys = y_size
-        self.ns = Nodes(x_size=x_size, y_size=y_size)
+        self.ns = Nodes(x_size=x_size, y_size=y_size,x_nodes=10,y_nodes=10)
         self.ed = Edges(nodes=self.ns.nodes)
         self.tr = Trians(nodes=self.ns.nodes,
                          edges=self.ed.edges)
@@ -207,16 +207,19 @@ class Domain:
             p = (a + b + c) / 2
             self.tr.trians.loc[ind,"S"] = np.sqrt(p*(p-a)*(p-b)*(p-c))
 
-    def fluxes_errosion(self):
+    def fluxes_errosion(self,
+                        factor_gr=0.0001,
+                        factor_ag=0.0001):
 
-        self.tr.trians.loc[:,"Flux_F"] = 0
-        self.tr.trians.loc[:,"Flux_V"] = 0
+        self.tr.trians.loc[:, "Flux_F"] = 0
+        self.tr.trians.loc[:, "Flux_V"] = 0
+        self.ed.edges.loc[:, "W"] = (1 - factor_ag) * self.ed.edges.loc[:, "W"]
 
         for ind, ser in self.ed.edges.iterrows():
 
             # errosion of edges
-            self.ed.edges.loc[ind, "W"] = 0.5 * (ser["W"] + 0.5 * (self.tr.trians.loc[ser["T1"], "F"]
-                                                                   + self.tr.trians.loc[ser["T2"], "F"]))
+            if (self.tr.trians.loc[ser["T1"], "F"] + self.tr.trians.loc[ser["T2"], "F"]) > 1:
+                self.ed.edges.loc[ind, "W"] = ser["W"] + (1 - ser["W"]) * factor_gr
 
             #fluxes for force
             dens1 = self.tr.trians.loc[ser["T1"],"F"] / self.tr.trians.loc[ser["T1"],"S"]
@@ -247,31 +250,34 @@ class Domain:
             self.tr.trians.loc[ser["T2"], "Flux_V"] = (self.tr.trians.loc[ser["T2"], "Flux_V"]
                                                       + self.ed.edges.loc[ind, "Flux_V"])
 
-    def diffusion(self):
+    def diffusion(self,
+                  penetr=0.1):
 
         cur = self.tr.trians["Flux_F"] > 0
-        self.tr.trians.loc[cur, "F"] = self.tr.trians.loc[cur, "F"] + (1 -
+        self.tr.trians.loc[cur, "F"] = self.tr.trians.loc[cur, "F"] + penetr * (1 -
                                       self.tr.trians.loc[cur, "F"]) * self.tr.trians.loc[cur, "Flux_F"] / 3
         cur = self.tr.trians["Flux_F"] < 0
-        self.tr.trians.loc[cur, "F"] = self.tr.trians.loc[cur, "F"] + (
+        self.tr.trians.loc[cur, "F"] = self.tr.trians.loc[cur, "F"] + penetr * (
                                        self.tr.trians.loc[cur, "F"] * self.tr.trians.loc[cur, "Flux_F"] / 3)
 
         cur = self.tr.trians["Flux_V"] > 0
-        self.tr.trians.loc[cur, "V"] = self.tr.trians.loc[cur, "V"] + (1 -
+        self.tr.trians.loc[cur, "V"] = self.tr.trians.loc[cur, "V"] + penetr * (1 -
                 self.tr.trians.loc[cur, "V"]) * self.tr.trians.loc[cur, "Flux_V"] / 3
         cur = self.tr.trians["Flux_V"] < 0
-        self.tr.trians.loc[cur, "V"] = self.tr.trians.loc[cur, "V"] + (
+        self.tr.trians.loc[cur, "V"] = self.tr.trians.loc[cur, "V"] + penetr * (
                 self.tr.trians.loc[cur, "V"] * self.tr.trians.loc[cur, "Flux_V"] / 3)
 
 
 
 dom = Domain()
-for i in range(500):
+for i in range(1000):
     nodes = dom.ns.nodes
     edges = dom.ed.edges
     trians = dom.tr.trians
 
-    fig, ax = plt.subplots()
+    fig = plt.figure()
+    ax = plt.axes()
+    #fig, ax = plt.subplots()
 
     for ind, ser in trians.iterrows():
         #print([ser["V"], 0, ser["F"]])
@@ -281,7 +287,7 @@ for i in range(500):
                                 nodes.loc[ser["N2"], "Y"]],
                                [nodes.loc[ser["N3"], "X"],
                                 nodes.loc[ser["N3"], "Y"]]],
-                              color=[ser["V"], 0, ser["F"]])
+                              color=[ser["V"], 0, ser["F"]], linewidth=0)
         ax.add_artist(tri)
 
     for ind, ser in edges.iterrows():
@@ -294,9 +300,10 @@ for i in range(500):
     ax.axis('square')
     ax.set_xlim(-0.1, 1.1)
     ax.set_ylim(-0.1, 1.1)
-    plt.savefig("time" + str(i) + ".png", dpi=1200, bbox_inches="tight", figsize=[10, 10])
+    plt.savefig("time" + str(i) + ".png", dpi=600, bbox_inches="tight", figsize=[10, 10])
+    plt.close(fig)
 
-    print("Calculations for",i+1,"step")
+    print("Calculations for", i+1, "step")
     dom.calc_squares()
     dom.fluxes_errosion()
     dom.diffusion()
